@@ -1,4 +1,5 @@
 from django import template
+from django.conf import settings
 from django.utils.datastructures import SortedDict
 
 import nexus
@@ -9,6 +10,8 @@ register = template.Library()
 
 
 def nexus_media_prefix():
+    if conf.USE_STATICFILES:
+        return settings.STATIC_URL.rstrip('/')
     return conf.MEDIA_PREFIX.rstrip('/')
 register.simple_tag(nexus_media_prefix)
 
