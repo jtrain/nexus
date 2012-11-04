@@ -1,5 +1,6 @@
 # Core site concept heavily inspired by django.contrib.sites
 
+from django.conf import settings
 from django.core.context_processors import csrf
 from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect, HttpResponse, HttpResponseNotModified, Http404
@@ -12,6 +13,10 @@ from django.utils.http import http_date
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.static import was_modified_since
+try:
+    from django.contrib.staticfiles.views import serve
+except ImportError: # django<1.3
+    serve = None
 
 from nexus import conf
 
@@ -73,6 +78,16 @@ class NexusSite(object):
             namespace = module.get_namespace()
         if namespace:
             module.app_name = module.name = namespace
+        if conf.USE_STATICFILES and os.path.exists(module.media_root):
+            static_prefix = namespace if namespace != 'admin' else 'nexus'
+            nexus_static = (
+                (static_prefix, module.media_root),
+            )
+            if isinstance(settings.STATICFILES_DIRS, tuple):
+                settings.STATICFILES_DIRS += nexus_static
+            else:
+                settings.STATICFILES_DIRS.extends(nexus_static)
+
         self._registry[namespace] = (module, category)
         return module
 
@@ -205,6 +220,9 @@ class NexusSite(object):
         """
         Serve static files below a given point in the directory structure.
         """
+        if conf.USE_STATICFILES and serve:
+            return serve(path='%s/%s' % (module, path))
+
         if module == 'nexus':
             document_root = os.path.join(NEXUS_ROOT, 'media')
         else:
