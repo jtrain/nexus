@@ -1,5 +1,6 @@
 # Core site concept heavily inspired by django.contrib.sites
 
+from django.conf import settings
 from django.core.context_processors import csrf
 from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect, HttpResponse, HttpResponseNotModified, Http404
@@ -12,6 +13,10 @@ from django.utils.http import http_date
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.static import was_modified_since
+try:
+    from django.contrib.staticfiles.views import serve
+except ImportError: # django<1.3
+    serve = None
 
 from nexus import conf
 
@@ -23,6 +28,33 @@ import stat
 import urllib
 
 NEXUS_ROOT = os.path.normpath(os.path.dirname(__file__))
+
+
+try:
+    from django.views.decorators.csrf import ensure_csrf_cookie
+except ImportError:  # must be < Django 1.3
+    from django.views.decorators.csrf import CsrfViewMiddleware
+    from django.middleware.csrf import get_token
+    from django.utils.decorators import decorator_from_middleware
+
+    class _EnsureCsrfCookie(CsrfViewMiddleware):
+        def _reject(self, request, reason):
+            return None
+
+        def process_view(self, request, callback, callback_args, callback_kwargs):
+            retval = super(_EnsureCsrfCookie, self).process_view(request, callback, callback_args, callback_kwargs)
+            # Forces process_response to send the cookie
+            get_token(request)
+            return retval
+
+
+    ensure_csrf_cookie = decorator_from_middleware(_EnsureCsrfCookie)
+    ensure_csrf_cookie.__name__ = 'ensure_csrf_cookie'
+    ensure_csrf_cookie.__doc__ = """
+    Use this decorator to ensure that a view sets a CSRF cookie, whether or not it
+    uses the csrf_token template tag, or the CsrfViewMiddleware is used.
+    """
+
 
 class NexusSite(object):
     def __init__(self, name=None, app_name='nexus'):
@@ -46,9 +78,19 @@ class NexusSite(object):
             namespace = module.get_namespace()
         if namespace:
             module.app_name = module.name = namespace
+        if conf.USE_STATICFILES and os.path.exists(module.media_root):
+            static_prefix = namespace if namespace != 'admin' else 'nexus'
+            nexus_static = (
+                (static_prefix, module.media_root),
+            )
+            if isinstance(settings.STATICFILES_DIRS, tuple):
+                settings.STATICFILES_DIRS += nexus_static
+            else:
+                settings.STATICFILES_DIRS.extends(nexus_static)
+
         self._registry[namespace] = (module, category)
         return module
-    
+
     def unregister(self, namespace):
         if namespace in self._registry:
             del self._registry[namespace]
@@ -66,7 +108,7 @@ class NexusSite(object):
             url(r'^login/$', self.login, name='login'),
             url(r'^logout/$', self.as_view(self.logout), name='logout'),
         ), self.app_name, self.name
-        
+
         urlpatterns = patterns('',
             url(r'^', include(base_urls)),
         )
@@ -74,8 +116,9 @@ class NexusSite(object):
             urlpatterns += patterns('',
                 url(r'^%s/' % namespace, include(module.urls)),
             )
-        
+
         return urlpatterns
+
     def urls(self):
         return self.get_urls()
 
@@ -112,6 +155,8 @@ class NexusSite(object):
         if not getattr(view, 'csrf_exempt', False):
             inner = csrf_protect(inner)
 
+        inner = ensure_csrf_cookie(inner)
+
         return update_wrapper(inner, view)
 
     def get_context(self, request):
@@ -126,7 +171,7 @@ class NexusSite(object):
     def get_modules(self):
         for k, v in self._registry.iteritems():
             yield k, v[0]
-    
+
     def get_module(self, module):
         return self._registry[module][0]
 
@@ -142,14 +187,14 @@ class NexusSite(object):
             current_app = self.name
         else:
             current_app = '%s:%s' % (self.name, current_app)
-        
+
         if request:
             context_instance = RequestContext(request, current_app=current_app)
         else:
             context_instance = None
 
         context.update(self.get_context(request))
-        
+
         return render_to_string(template, context,
             context_instance=context_instance
         )
@@ -160,29 +205,32 @@ class NexusSite(object):
             current_app = self.name
         else:
             current_app = '%s:%s' % (self.name, current_app)
-        
+
         if request:
             context_instance = RequestContext(request, current_app=current_app)
         else:
             context_instance = None
 
         context.update(self.get_context(request))
-        
+
         return render_to_response(template, context,
             context_instance=context_instance
         )
 
     ## Our views
-    
+
     def media(self, request, module, path):
         """
         Serve static files below a given point in the directory structure.
         """
+        if conf.USE_STATICFILES and serve:
+            return serve(path='%s/%s' % (module, path))
+
         if module == 'nexus':
             document_root = os.path.join(NEXUS_ROOT, 'media')
         else:
             document_root = self.get_module(module).media_root
-        
+
         path = posixpath.normpath(urllib.unquote(path))
         path = path.lstrip('/')
         newpath = ''
@@ -213,7 +261,7 @@ class NexusSite(object):
         response = HttpResponse(contents, mimetype=mimetype)
         response["Last-Modified"] = http_date(statobj[stat.ST_MTIME])
         response["Content-Length"] = len(contents)
-        return response        
+        return response
 
     def login(self, request, form_class=None):
         "Login form"
@@ -239,7 +287,7 @@ class NexusSite(object):
             'form': form,
         }, request)
     login = never_cache(login)
-    
+
     def logout(self, request):
         "Logs out user and redirects them to Nexus home"
         from django.contrib.auth import logout
@@ -259,7 +307,7 @@ class NexusSite(object):
                 # Show by default, unless a permission is required
                 if not module.permission or request.user.has_perm(module.permission):
                     module_set.append((module.get_dashboard_title(), module.render_on_dashboard(request), home_url))
-        
+
         return self.render_to_response('nexus/dashboard.html', {
             'module_set': module_set,
         }, request)

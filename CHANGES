@@ -1,0 +1,18 @@
+0.2.4
+
+- conf.py switch USE_STATICFILES to use django's staticfiles for nexus media
+- url template tag django 1.5 compatible.
+- avoid deprecation warning for django.conf.urls
+
+0.2.3
+
+- Ensure on exempt views we still send .
+- Downgrade CSRF ajax to work with older versions of jQuery.
+
+0.2.2
+
+- Update AJAX CSRF set to work against correct origins.
+
+0.2.1
+
+- Added version to Nexus footer.
