@@ -86,7 +86,7 @@ class NexusSite(object):
             if isinstance(settings.STATICFILES_DIRS, tuple):
                 settings.STATICFILES_DIRS += nexus_static
             else:
-                settings.STATICFILES_DIRS.extends(nexus_static)
+                settings.STATICFILES_DIRS.extend(nexus_static)
 
         self._registry[namespace] = (module, category)
         return module
