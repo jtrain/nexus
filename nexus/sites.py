@@ -224,7 +224,7 @@ class NexusSite(object):
         Serve static files below a given point in the directory structure.
         """
         if conf.USE_STATICFILES and serve:
-            return serve(path='%s/%s' % (module, path))
+            return serve(request, path='%s/%s' % (module, path))
 
         if module == 'nexus':
             document_root = os.path.join(NEXUS_ROOT, 'media')
