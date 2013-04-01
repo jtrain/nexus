@@ -12,7 +12,7 @@ register = template.Library()
 def nexus_media_prefix():
     if conf.USE_STATICFILES:
         return settings.STATIC_URL.rstrip('/')
-    return conf.MEDIA_PREFIX.rstrip('/')
+    return conf.MEDIA_PREFIX.rstrip('/') + '/nexus/'
 register.simple_tag(nexus_media_prefix)
 
 
